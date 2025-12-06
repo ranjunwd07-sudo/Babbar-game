@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Babbar Game: Endless Dash</title>
+    <style>
+        /* --- GLOBAL STYLES --- */
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #0b0f1a;
+            color: #ecf0f1;
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        /* --- GAME UI CONTAINER --- */
+        #game-ui {
+            background-color: #1a1a2e;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            width: 90vw;
+            max-width: 600px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            color: #ffcc00; /* Gold */
+            text-shadow: 0 0 5px #ff6600;
+            margin-top: 0;
+            font-size: 2.5em;
+        }
+
+        #score-display {
+            font-size: 1.5em;
+            margin-bottom: 10px;
+            color: #f39c12;
+        }
+
+        /* --- BUTTON STYLES --- */
+        .game-button {
+            background: linear-gradient(145deg, #e74c3c, #c0392b);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1.1em;
+            font-weight: bold;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+            transition: all 0.2s ease;
+        }
+
+        .game-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
+        }
+
+        .game-button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        /* --- GAME STAGE (Pseudo-3D) --- */
+        #game-stage {
+            width: 100%;
+            height: 400px;
+            /* Key CSS for 3D effect: perspective */
+            perspective: 300px; 
+            overflow: hidden;
+            position: relative;
+            background-color: #000;
+            border: 5px solid #ffcc00;
+            border-radius: 10px;
+        }
+
+        #game-world {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            transform-style: preserve-3d;
+            /* This will be moved by JavaScript */
+            transition: transform 0.1s ease-out; 
+        }
+
+        /* --- ROAD AND LANES --- */
+        .lane-segment {
+            position: absolute;
+            left: 50%;
+            bottom: 0;
+            width: 150px; /* Width of all 3 lanes combined */
+            height: 400px; /* Max Z-depth */
+            background-color: rgba(30, 30, 50, 0.8);
+            transform: translateX(-50%) rotateX(60deg) translateZ(-400px);
+            /* Lanes are drawn as divs extending into the perspective */
+            border-left: 2px dashed #4a4a4a;
+            border-right: 2px dashed #4a4a4a;
+        }
+        
+        /* The Runner (Babbar) */
+        #runner {
+            position: absolute;
+            bottom: 20px;
+            width: 30px;
+            height: 50px;
+            background-color: #2ecc71; /* Green for Babbar */
+            border-radius: 5px;
+            left: 50%;
+            transform: translateX(-50%);
+            transition: left 0.1s, transform 0.2s, background-color 0.2s; /* For lane changes and jump/slide */
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5em;
+            text-shadow: 0 0 5px black;
+        }
+
+        /* Obstacles */
+        .obstacle {
+            position: absolute;
+            bottom: 0;
+            width: 40px;
+            height: 40px;
+            background-color: #e74c3c; /* Red obstacle */
+            transform: translateZ(-100px); /* Start further away */
+            border-radius: 5px;
+            z-index: 50;
+        }
+
+        /* Mobile Controls */
+        #controls {
+            display: flex;
+            justify-content: space-around;
+            width: 100%;
+            max-width: 400px;
+            margin-top: 20px;
+        }
+
+        .control-button {
+            font-size: 1.5em;
+            padding: 15px;
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background-color: #34495e;
+            color: white;
+            border: 3px solid #f39c12;
+            cursor: pointer;
+            transition: background-color 0.1s;
+            line-height: 1;
+        }
+
+        .control-button:active {
+            background-color: #2c3e50;
+        }
+
+        /* Initial game state overlay */
+        #start-screen, #game-over-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 200;
+            text-align: center;
+        }
+        #game-over-screen h2 { color: #e74c3c; }
+        #final-score { color: #f39c12; font-size: 2em; }
+
+        @media (max-width: 600px) {
+            #game-stage { height: 300px; }
+            h1 { font-size: 2em; }
+            .control-button {
+                width: 60px;
+                height: 60px;
+                padding: 10px;
+            }
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="game-ui">
+        <h1>BABBAR GAME: Endless Dash</h1>
+        <div id="score-display">Score: <span id="current-score">0</span></div>
+        <p>Use ← → keys or buttons to switch lanes.</p>
+    </div>
+
+    <div id="game-stage">
+        <div id="game-world">
+            <!-- Road segments will be added here by JS -->
+            
+            <div id="runner">🏃</div>
+            
+            <!-- Start Screen Overlay -->
+            <div id="start-screen">
+                <h2>Babbar Dash</h2>
+                <p>Run, Babbar, Run! Avoid the fiery obstacles.</p>
+                <button class="game-button" onclick="startGame()">Start Game</button>
+            </div>
+
+            <!-- Game Over Screen Overlay (Hidden initially) -->
+            <div id="game-over-screen" style="display: none;">
+                <h2>GAME OVER!</h2>
+                <p>You crashed!</p>
+                <div id="final-score"></div>
+                <button class="game-button" onclick="resetGame()">Try Again</button>
+            </div>
+
+        </div>
+    </div>
+    
+    <!-- Mobile/Touch Controls -->
+    <div id="controls">
+        <button class="control-button" onmousedown="moveLane(-1)">&#9664;</button>
+        <button class="control-button" onmousedown="jumpOrSlide('JUMP')" style="font-size: 1.2em;">JUMP</button>
+        <button class="control-button" onmousedown="moveLane(1)">&#9654;</button>
+    </div>
+
+
+    <script>
+        // --- GAME CONSTANTS ---
+        const GAME_SPEED = 2; // Initial speed (Z-axis movement per frame)
+        const LANE_WIDTH = 50; // Distance between lanes
+        const NUM_LANES = 3;
+        const INITIAL_LANE = 1; // Center lane (0, 1, 2)
+        const OBSTACLE_Z_START = -400; // Furthest Z-position
+
+        // --- GAME STATE ---
+        let gameActive = false;
+        let score = 0;
+        let currentLane = INITIAL_LANE; // 0 (left), 1 (center), 2 (right)
+        let obstacles = [];
+        let gameInterval = null;
+        let animationFrameId = null;
+
+        // --- DOM ELEMENTS ---
+        const runner = document.getElementById('runner');
+        const scoreDisplay = document.getElementById('current-score');
+        const gameWorld = document.getElementById('game-world');
+        const startScreen = document.getElementById('start-screen');
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const finalScoreDisplay = document.getElementById('final-score');
+
+        // --- GAME INITIALIZATION ---
+
+        function updateRunnerPosition() {
+            // Calculate target X position based on the current lane
+            // 0: -LANE_WIDTH, 1: 0, 2: +LANE_WIDTH
+            const targetX = (currentLane - INITIAL_LANE) * LANE_WIDTH;
+            
+            // Set the CSS 'left' property. The runner is initially centered at 50%
+            // and then shifted by the targetX offset.
+            runner.style.left = `calc(50% + ${targetX}px)`;
+        }
+
+        // --- GAME LOOP ---
+
+        function gameLoop() {
+            if (!gameActive) return;
+
+            // 1. Update Score
+            score += 1;
+            scoreDisplay.textContent = Math.floor(score / 10);
+
+            // 2. Move Obstacles and Check Collisions
+            for (let i = 0; i < obstacles.length; i++) {
+                const obs = obstacles[i];
+                // Move obstacle towards the camera (Z increases from -400 to 0)
+                obs.z += GAME_SPEED;
+
+                // CSS transform to simulate depth
+                obs.element.style.transform = `translateZ(${obs.z}px)`;
+                
+                // Remove obstacles that have passed the camera (z > 0)
+                if (obs.z > 50) {
+                    gameWorld.removeChild(obs.element);
+                    obstacles.splice(i, 1);
+                    i--; // Decrement index since we removed an element
+                    continue;
+                }
+
+                // --- Collision Detection (Simplified) ---
+                // If obstacle is near the runner (z is between -20 and 10) AND in the same lane
+                if (obs.lane === currentLane && obs.z > -20 && obs.z < 10) {
+                    endGame();
+                    return;
+                }
+            }
+
+            // 3. Generate new obstacles
+            if (Math.random() < 0.02) { // 2% chance per frame to spawn a new obstacle
+                spawnObstacle();
+            }
+
+            // 4. Request Next Frame
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        // --- OBSTACLE MANAGEMENT ---
+
+        function spawnObstacle() {
+            const lane = Math.floor(Math.random() * NUM_LANES); // 0, 1, or 2
+            
+            const element = document.createElement('div');
+            element.className = 'obstacle';
+            
+            // Calculate starting X position based on lane
+            const startX = (lane - INITIAL_LANE) * LANE_WIDTH;
+            element.style.left = `calc(50% + ${startX}px)`;
+
+            const obstacle = {
+                element: element,
+                lane: lane,
+                z: OBSTACLE_Z_START,
+            };
+
+            gameWorld.appendChild(element);
+            obstacles.push(obstacle);
+        }
+
+        // --- INPUT HANDLING ---
+
+        function moveLane(direction) {
+            if (!gameActive) return;
+            // direction: -1 for left, 1 for right
+            const newLane = currentLane + direction;
+            if (newLane >= 0 && newLane < NUM_LANES) {
+                currentLane = newLane;
+                updateRunnerPosition();
+            }
+        }
+
+        function jumpOrSlide(action) {
+            // For a basic version, this will just temporarily change the runner's look 
+            // and make collisions less likely (in a full game, it would involve Y-axis movement)
+            if (!gameActive) return;
+
+            runner.style.backgroundColor = '#f1c40f'; // Yellow to signify action
+            
+            // Temporary visual change (no actual Y-movement logic implemented here)
+            if (action === 'JUMP') {
+                runner.style.transform = 'translateY(-30px) scale(0.9)';
+            } else if (action === 'SLIDE') {
+                 runner.style.transform = 'translateY(15px) scale(1.1, 0.5)';
+            }
+
+            // Reset after a short delay
+            setTimeout(() => {
+                runner.style.backgroundColor = '#2ecc71';
+                runner.style.transform = ''; // Reset transform
+            }, 300);
+        }
+
+        // Keyboard Event Listener
+        document.addEventListener('keydown', (e) => {
+            if (!gameActive) return;
+            if (e.key === 'ArrowLeft') {
+                moveLane(-1);
+            } else if (e.key === 'ArrowRight') {
+                moveLane(1);
+            } else if (e.key === 'ArrowUp' || e.key === ' ') {
+                jumpOrSlide('JUMP');
+            } else if (e.key === 'ArrowDown') {
+                jumpOrSlide('SLIDE');
+            }
+        });
+
+        // --- GAME FLOW MANAGEMENT ---
+
+        function startGame() {
+            startScreen.style.display = 'none';
+            gameOverScreen.style.display = 'none';
+            gameActive = true;
+            score = 0;
+            currentLane = INITIAL_LANE;
+            updateRunnerPosition();
+            
+            // Start the main loop
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        function endGame() {
+            gameActive = false;
+            cancelAnimationFrame(animationFrameId); // Stop the loop
+
+            // Show Game Over screen
+            finalScoreDisplay.textContent = `Final Score: ${Math.floor(score / 10)}`;
+            gameOverScreen.style.display = 'flex';
+            runner.style.backgroundColor = '#e74c3c'; // Red crash color
+        }
+
+        function resetGame() {
+            // Clear all existing obstacles
+            obstacles.forEach(obs => gameWorld.removeChild(obs.element));
+            obstacles = [];
+            
+            // Reset runner appearance and state
+            runner.style.backgroundColor = '#2ecc71';
+            
+            // Show start screen for a clean restart
+            startScreen.style.display = 'flex';
+            gameOverScreen.style.display = 'none';
+            scoreDisplay.textContent = '0';
+        }
+
+        // Initial setup
+        document.addEventListener('DOMContentLoaded', updateRunnerPosition);
+    </script>
+</body>
+</html>
+
